@@ -1,0 +1,498 @@
+generator client {
+    provider        = "prisma-client-js"
+    previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+    provider  = "postgresql"
+    url       = env("DATABASE_URL")
+    directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+model User {
+    id                  String  @id
+    name                String?
+    email               String? @unique
+    phone               String?
+    plan                String  @default("basic")
+    credits             Int     @default(3)
+    image               String?
+    language            String? @default("english")
+    onboardingEmailSent Boolean @default(false)
+
+    bankAccounts BankAccount[]
+    budgets      Budget[]
+
+    createdAt DateTime @default(now()) @map(name: "created_at")
+    updatedAt DateTime @default(now()) @map(name: "updated_at")
+
+    stripeCustomerId       String?       @unique @map(name: "stripe_customer_id")
+    stripeSubscriptionId   String?       @unique @map(name: "stripe_subscription_id")
+    stripePriceId          String?       @map(name: "stripe_price_id")
+    stripeCurrentPeriodEnd DateTime?     @map(name: "stripe_current_period_end")
+    workspaceId            String?
+    workspace              Workspace?    @relation(fields: [workspaceId], references: [id])
+    Category               Category[]
+    assets                 Asset[]
+    investments            Investment[]
+    liabilities            Liability[]
+    savingsGoals           SavingsGoal[]
+
+    @@map(name: "users")
+}
+
+model Workspace {
+    id           String        @id @default(cuid())
+    name         String
+    orgnr        Int?
+    address      String?
+    postalCode   String?
+    city         String?
+    users        User[]
+    bankAccounts BankAccount[]
+
+    createdAt DateTime @default(now()) @map(name: "created_at")
+    updatedAt DateTime @default(now()) @map(name: "updated_at")
+}
+
+model BankAccount {
+    id              String        @id @default(cuid())
+    createdAt       DateTime      @default(now())
+    updatedAt       DateTime      @default(now())
+    resourceId      String?
+    originalId      String?
+    orgId           String?
+    userId          String?
+    name            String
+    originalPayload Json?
+    initialAmount   Int?          @default(0)
+    Balance         Balance[]
+    Transaction     Transaction[]
+    accountType     AccountType   @default(BANK)
+    resource        Resource?     @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+    workspaceId     String?
+    workspace       Workspace?    @relation(fields: [workspaceId], references: [id])
+    user            User?         @relation(fields: [userId], references: [id])
+
+    @@map(name: "bank_accounts")
+}
+
+model Balance {
+    id              String       @id @default(cuid())
+    createdAt       DateTime     @default(now())
+    updatedAt       DateTime     @default(now())
+    accountId       String?
+    assetId         String?
+    currencyIso     String
+    amount          Int?
+    date            DateTime
+    type            BalanceType  @default(AVAILABLE)
+    originalPayload Json?
+    bankAccount     BankAccount? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+    asset           Asset?       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+    currency        Currency     @relation(fields: [currencyIso], references: [iso], onDelete: Cascade)
+}
+
+model Currency {
+    iso         String        @id
+    symbol      String        @default("$")
+    name        String        @default("US Dollar")
+    numericCode Int?
+    Balance     Balance[]
+    Transaction Transaction[]
+}
+
+model Asset {
+    id              String             @id @default(cuid())
+    name            String
+    originalPayload Json?
+    Balance         Balance[]
+    Transaction     Transaction[]
+    type            AssetType
+    value           Decimal
+    purchaseDate    DateTime?
+    description     String?
+    userId          String
+    user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+    transactions    AssetTransaction[]
+    valuations      AssetValuation[]
+
+    @@map(name: "assets")
+}
+
+model AssetValuation {
+    id        String   @id @default(cuid())
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+    value     Decimal
+    date      DateTime
+    assetId   String
+    asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+    @@map(name: "asset_valuations")
+}
+
+model AssetTransaction {
+    id          String          @id @default(cuid())
+    createdAt   DateTime        @default(now())
+    updatedAt   DateTime        @updatedAt
+    type        TransactionType
+    amount      Decimal
+    date        DateTime
+    description String?
+    assetId     String
+    asset       Asset           @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+    @@map(name: "asset_transactions")
+}
+
+model Transaction {
+    id                  String       @id @default(cuid())
+    createdAt           DateTime     @default(now())
+    updatedAt           DateTime     @default(now())
+    accountId           String?
+    assetId             String?
+    currencyIso         String
+    categoryId          String?
+    amount              Decimal
+    date                DateTime
+    description         String
+    originalPayload     Json?
+    review              Boolean      @default(false)
+    bankAccount         BankAccount? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+    asset               Asset?       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+    category            Category?    @relation(fields: [categoryId], references: [id])
+    currency            Currency     @relation(fields: [currencyIso], references: [iso], onDelete: Cascade)
+    type                String
+    categoryValidated   Boolean      @default(false)
+    suggestedCategoryId String?
+}
+
+model Category {
+    id           String           @id @default(cuid())
+    createdAt    DateTime         @default(now())
+    updatedAt    DateTime         @updatedAt
+    name         String
+    icon         String
+    userId       String
+    user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+    transactions Transaction[]
+    budgets      CategoryBudget[]
+
+    @@unique([name, userId])
+    @@map(name: "categories")
+}
+
+model Budget {
+    id         String           @id @default(cuid())
+    createdAt  DateTime         @default(now())
+    updatedAt  DateTime         @updatedAt
+    name       String?
+    startDate  DateTime?
+    endDate    DateTime?
+    amount     Decimal?
+    userId     String
+    user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+    categories CategoryBudget[]
+
+    @@map(name: "budgets")
+}
+
+model CategoryBudget {
+    id         String   @id @default(cuid())
+    createdAt  DateTime @default(now())
+    updatedAt  DateTime @updatedAt
+    amount     Decimal
+    budgetId   String
+    categoryId String
+    budget     Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+    category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+    @@unique([budgetId, categoryId])
+    @@map(name: "category_budgets")
+}
+
+model ConnectorConfig {
+    id          String       @id @default(cuid())
+    createdAt   DateTime     @default(now())
+    updatedAt   DateTime     @default(now())
+    orgId       String
+    secret      Json?
+    env         ConnectorEnv
+    connectorId String
+    connector   Connector    @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+}
+
+model Connector {
+    id              String            @id @default(cuid())
+    createdAt       DateTime          @default(now())
+    updatedAt       DateTime          @default(now())
+    name            String
+    logoUrl         String?
+    status          ConnectorStatus
+    type            ConnectorType
+    connectorConfig ConnectorConfig[]
+    Integration     Integration[]
+}
+
+model Integration {
+    id                  String     @id @default(cuid())
+    createdAt           DateTime   @default(now())
+    updatedAt           DateTime   @default(now())
+    name                String
+    logoUrl             String?
+    connectorProviderId String?    @unique
+    connectorId         String
+    connector           Connector  @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+    Resource            Resource[]
+}
+
+model Resource {
+    id            String        @id @default(cuid())
+    createdAt     DateTime      @default(now())
+    updatedAt     DateTime      @default(now())
+    integrationId String
+    originalId    String
+    userId        String
+    integration   Integration   @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+    bankAccounts  BankAccount[]
+
+    @@map(name: "resources")
+}
+
+model Stats {
+    id                     String   @id @default(cuid())
+    createdAt              DateTime @default(now())
+    updatedAt              DateTime @updatedAt
+    totalUsers             Int      @default(0)
+    activeUsers            Int      @default(0)
+    totalAccounts          Int      @default(0)
+    totalTransactions      Int      @default(0)
+    totalAssets            Int      @default(0)
+    totalLiabilities       Int      @default(0)
+    totalInvestments       Int      @default(0)
+    avgAccountsPerUser     Decimal  @default(0)
+    avgTransactionsPerUser Decimal  @default(0)
+    dailyActiveUsers       Int      @default(0)
+    weeklyActiveUsers      Int      @default(0)
+    monthlyActiveUsers     Int      @default(0)
+    operatingSystem        Json? // Store counts for different OS
+    browser                Json? // Store counts for different browsers
+    country                Json? // Store counts for different countries
+    lastUpdated            DateTime @default(now())
+
+    @@map(name: "stats")
+}
+
+model StatsHistory {
+    id                 String   @id @default(cuid())
+    createdAt          DateTime @default(now())
+    totalUsers         Int
+    activeUsers        Int
+    totalAccounts      Int
+    totalTransactions  Int
+    totalAssets        Int
+    totalLiabilities   Int
+    totalInvestments   Int
+    dailyActiveUsers   Int
+    weeklyActiveUsers  Int
+    monthlyActiveUsers Int
+    snapshot           Json // Store full stats snapshot
+
+    @@map(name: "stats_history")
+}
+
+model Investment {
+    id            String                  @id @default(cuid())
+    createdAt     DateTime                @default(now())
+    updatedAt     DateTime                @updatedAt
+    name          String
+    type          InvestmentType
+    amount        Decimal
+    shares        Decimal?
+    purchasePrice Decimal?
+    currentPrice  Decimal?
+    description   String?
+    userId        String
+    user          User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+    transactions  InvestmentTransaction[]
+    valuations    InvestmentValuation[]
+
+    @@map(name: "investments")
+}
+
+model InvestmentValuation {
+    id           String     @id @default(cuid())
+    createdAt    DateTime   @default(now())
+    updatedAt    DateTime   @updatedAt
+    value        Decimal
+    date         DateTime
+    investmentId String
+    investment   Investment @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+
+    @@map(name: "investment_valuations")
+}
+
+model InvestmentTransaction {
+    id           String                    @id @default(cuid())
+    createdAt    DateTime                  @default(now())
+    updatedAt    DateTime                  @updatedAt
+    type         InvestmentTransactionType
+    amount       Decimal
+    shares       Decimal?
+    price        Decimal
+    date         DateTime
+    description  String?
+    investmentId String
+    investment   Investment                @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+
+    @@map(name: "investment_transactions")
+}
+
+model Liability {
+    id             String             @id @default(cuid())
+    createdAt      DateTime           @default(now())
+    updatedAt      DateTime           @updatedAt
+    name           String
+    type           LiabilityType
+    amount         Decimal
+    interestRate   Decimal
+    monthlyPayment Decimal
+    startDate      DateTime?
+    endDate        DateTime?
+    description    String?
+    userId         String
+    user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+    payments       LiabilityPayment[]
+
+    @@map(name: "liabilities")
+}
+
+model LiabilityPayment {
+    id          String      @id @default(cuid())
+    createdAt   DateTime    @default(now())
+    updatedAt   DateTime    @updatedAt
+    amount      Decimal
+    date        DateTime
+    type        PaymentType
+    description String?
+    liabilityId String
+    liability   Liability   @relation(fields: [liabilityId], references: [id], onDelete: Cascade)
+
+    @@map(name: "liability_payments")
+}
+
+model SavingsGoal {
+    id          String            @id @default(cuid())
+    createdAt   DateTime          @default(now())
+    updatedAt   DateTime          @updatedAt
+    name        String
+    target      Decimal
+    current     Decimal           @default(0)
+    deadline    DateTime?
+    description String?
+    isDefault   Boolean           @default(false) // To distinguish between system defaults and user goals
+    type        GoalType          @default(CUSTOM)
+    priority    Int               @default(0) // For ordering goals
+    userId      String
+    user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+    progress    SavingsProgress[]
+
+    @@map(name: "savings_goals")
+}
+
+model SavingsProgress {
+    id        String      @id @default(cuid())
+    createdAt DateTime    @default(now())
+    amount    Decimal
+    date      DateTime
+    goalId    String
+    goal      SavingsGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+    @@map(name: "savings_progress")
+}
+
+enum AccountType {
+    BANK
+    SAVINGS
+    INVESTMENT
+    CRYPTO
+}
+
+enum BalanceType {
+    AVAILABLE
+    BOOKED
+    EXPECTED
+}
+
+enum ConnectorEnv {
+    DEVELOPMENT
+    SANDBOX
+    PRODUCTION
+}
+
+enum ConnectorStatus {
+    ACTIVE
+    BETA
+    DEV
+    INACTIVE
+}
+
+enum ConnectorType {
+    DIRECT
+    AGGREGATED
+}
+
+enum AssetType {
+    REAL_ESTATE
+    VEHICLE
+    PRECIOUS_METALS
+    OTHER
+}
+
+enum TransactionType {
+    PURCHASE
+    SALE
+    MAINTENANCE
+    IMPROVEMENT
+    DEPRECIATION
+    APPRECIATION
+}
+
+enum InvestmentType {
+    STOCKS
+    CRYPTO
+    ETF
+    OTHER
+}
+
+enum InvestmentTransactionType {
+    BUY
+    SELL
+    DIVIDEND
+    SPLIT
+    MERGE
+}
+
+enum LiabilityType {
+    MORTGAGE
+    CREDIT_CARD
+    CAR_LOAN
+    STUDENT_LOAN
+}
+
+enum PaymentType {
+    REGULAR
+    EXTRA
+    INTEREST
+    PRINCIPAL
+}
+
+enum GoalType {
+    EMERGENCY_FUND
+    RETIREMENT
+    DOWN_PAYMENT
+    CUSTOM
+}
+
+// if we need full reset : npx prisma db push --force-reset
